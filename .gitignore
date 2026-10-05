@@ -1,0 +1,21 @@
+# Archived forum data — never commit (2.5 GB, third-party content)
+data/
+
+# Local config may contain credentials
+config.yml
+*.cookie
+cookie.txt
+data/cookie.txt
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Logs and temp
+*.log
+*.tar.gz
+tmp/
+*.tmp
+.*.tmp

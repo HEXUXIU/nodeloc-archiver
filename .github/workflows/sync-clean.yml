@@ -1,0 +1,85 @@
+name: Sync and clean
+
+on:
+  schedule:
+    # GitHub cron is UTC. 03:17 avoids the top-of-hour rush.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      max_topics:
+        description: "Topic cap for this run (0 = all discovered)"
+        required: false
+        default: "300"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nodeloc-sync
+  cancel-in-progress: false
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: python -m unittest -v test_archive.py
+
+      - name: Check upstream availability
+        id: probe
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" https://www.nodeloc.com/robots.txt)
+          echo "robots_status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" != "200" ]; then
+            echo "::warning::site unreachable (status $status), skipping crawl"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Archive public topics
+        if: steps.probe.outputs.skip != 'true'
+        env:
+          MAX_TOPICS: ${{ github.event.inputs.max_topics || '300' }}
+        run: |
+          python archive.py \
+            --config config.ci.yml \
+            --max-topics "$MAX_TOPICS" \
+            --seed 20261004
+
+      - name: Clean archived data
+        if: steps.probe.outputs.skip != 'true'
+        run: python clean.py --out data/clean
+
+      - name: Upload clean corpus artifact
+        if: steps.probe.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodeloc-clean
+          path: data/clean
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Summarise
+        if: always()
+        run: |
+          set +e
+          test -f data/failures.json && echo "failures: $(python -c 'import json;print(len(json.load(open("data/failures.json"))))')"
+          test -f data/clean/corpus.db && python - <<'PY'
+          import sqlite3
+          db = sqlite3.connect("data/clean/corpus.db")
+          t = db.execute("SELECT COUNT(*) FROM topics").fetchone()[0]
+          p, c = db.execute("SELECT COUNT(*), COALESCE(SUM(text_chars),0) FROM posts").fetchone()
+          print(f"topics={t} posts={p} chars={c}")
+          PY

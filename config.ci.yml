@@ -1,0 +1,12 @@
+base_url: https://www.nodeloc.com
+sitemap_url: https://www.nodeloc.com/sitemap.xml
+output_dir: data
+max_topics: 300
+request_delay_seconds:
+  min: 2.0
+  max: 4.0
+max_retries: 5
+concurrency: 1
+posts_chunk_size: 100
+timeout_seconds: 30
+user_agent: NodeLocPublicArchiver/0.1
